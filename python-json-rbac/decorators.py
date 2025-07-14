@@ -3,6 +3,8 @@ FastAPI decorator for RBAC enforcement.
 """
 import functools
 from typing import Callable
+import inspect
+import asyncio
 
 from fastapi import Depends, HTTPException, status
 
@@ -19,9 +21,16 @@ def rbac_protect(role: str) -> Callable:
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            user = kwargs.get("user") or (
-                args[0] if args else None
-            )  # FastAPI injects user via Depends
+            # Try to find 'user' in kwargs, then in positional args by name
+            user = kwargs.get("user")
+            if not user:
+                sig = inspect.signature(func)
+                param_names = list(sig.parameters.keys())
+                if "user" in param_names:
+                    user_index = param_names.index("user")
+                    if len(args) > user_index:
+                        user = args[user_index]
+
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="User not authenticated"
@@ -31,9 +40,12 @@ def rbac_protect(role: str) -> Callable:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Insufficient privileges (role '{role}' required)",
                 )
-            return await func(*args, **kwargs) if asyncio.iscoroutinefunction(func) else func(
-                *args, **kwargs
-            )
+
+            # Await async functions, call sync functions directly
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
 
         # Ensure FastAPI dependency injection
         original_sig = inspect.signature(func)
@@ -52,8 +64,3 @@ def rbac_protect(role: str) -> Callable:
         return wrapper
 
     return decorator
-
-
-# Needed for decorator introspection
-import inspect
-import asyncio

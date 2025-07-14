@@ -21,4 +21,8 @@ if ALGORITHM not in {"HS256", "RS256"}:
 ENABLE_JWE: bool = os.getenv("JWT_ENABLE_JWE", "false").lower() in {"1", "true", "yes"}
 
 # --- Token lifetime ----------------------------------------------------------
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+try:
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+except ValueError:
+    print("Warning: Invalid JWT_EXPIRE_MINUTES. Must be an integer. Using default 30.")
+    ACCESS_TOKEN_EXPIRE_MINUTES = 30

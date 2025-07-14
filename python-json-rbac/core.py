@@ -2,6 +2,7 @@
 JWT / JWE creation and verification.
 """
 import datetime
+import os
 from typing import Any, Dict, Optional
 
 from jose import jwt, JWTError, ExpiredSignatureError
@@ -60,7 +61,7 @@ def create_token(
     if "sub" not in payload or "role" not in payload:
         raise ValueError("payload must contain 'sub' and 'role' claims")
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     exp = now + (expires_delta or datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     claims = {
         "iat": now,

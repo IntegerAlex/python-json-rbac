@@ -1,7 +1,7 @@
 """
 FastAPI dependency for extracting the current user from the Bearer token.
 """
-from typing import Dict
+from typing import Dict, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,7 +12,7 @@ oauth2_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     Dependency that returns the verified user payload.
     401 if token missing/expired/invalid.
