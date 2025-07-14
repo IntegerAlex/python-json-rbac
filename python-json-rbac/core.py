@@ -158,9 +158,9 @@ def verify_token(token: str) -> Dict[str, Any]:
         return payload
 
     except ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-    except (JWTError, JWTClaimsError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired") from None
+    except (JWTError, JWTClaimsError, ValueError) as err:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from err
+    except Exception as err:
         # Catch potential JWE decryption errors
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format") from err

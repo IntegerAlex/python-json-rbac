@@ -42,7 +42,13 @@ def rbac_protect(role: str) -> Callable:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="User not authenticated"
                 )
-            if user.get("role") != role:
+            user_roles = user.get("role")
+            if isinstance(user_roles, str):
+                user_roles = [user_roles]
+            elif not isinstance(user_roles, list):
+                user_roles = []
+                
+            if role not in user_roles:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Insufficient privileges (role '{role}' required)",
