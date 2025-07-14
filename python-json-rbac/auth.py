@@ -14,8 +14,12 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
 ) -> Dict[str, Any]:
     """
-    Dependency that returns the verified user payload.
-    401 if token missing/expired/invalid.
+    Extracts and verifies the current user from a Bearer token in the Authorization header.
+    
+    Raises an HTTP 401 Unauthorized error if the token is missing, expired, or invalid.
+    
+    Returns:
+        dict: The verified user payload extracted from the token.
     """
     if not credentials:
         raise HTTPException(

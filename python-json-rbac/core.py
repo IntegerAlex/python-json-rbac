@@ -23,13 +23,30 @@ from .config import (
 #                               KEY HELPERS                                   #
 # --------------------------------------------------------------------------- #
 def _load_key(path: Optional[str], is_private: bool = False) -> str:
-    """Load RSA key from file."""
+    """
+    Loads an RSA key from the specified file path.
+    
+    Parameters:
+        path (Optional[str]): Path to the RSA key file.
+        is_private (bool): Indicates whether the key is a private key.
+    
+    Returns:
+        str: The contents of the RSA key file as a string.
+    
+    Raises:
+        RuntimeError: If the key file does not exist or the path is not provided.
+    """
     if not path or not os.path.exists(path):
         raise RuntimeError(f"Key file not found: {path}")
     with open(path, "rb") as f:
         return f.read().decode()
 
 def _get_signing_key() -> str:
+    """
+    Return the signing key for JWT creation based on the configured algorithm.
+    
+    For HS256, returns the symmetric secret. For RS256, loads and returns the RSA private key from the configured file path. Raises a RuntimeError if the private key path is missing for RS256, or NotImplementedError for unsupported algorithms.
+    """
     if ALGORITHM == "HS256":
         return JWT_SECRET
     if ALGORITHM == "RS256":
@@ -39,6 +56,11 @@ def _get_signing_key() -> str:
     raise NotImplementedError(ALGORITHM)
 
 def _get_verify_key() -> str:
+    """
+    Returns the key used to verify JWT signatures based on the configured algorithm.
+    
+    For HS256, returns the shared secret. For RS256, loads and returns the public key from the configured file path. Raises a RuntimeError if the public key path is missing for RS256, or NotImplementedError for unsupported algorithms.
+    """
     if ALGORITHM == "HS256":
         return JWT_SECRET
     if ALGORITHM == "RS256":
@@ -55,8 +77,19 @@ def create_token(
     expires_delta: Optional[datetime.timedelta] = None,
 ) -> str:
     """
-    Create a signed (and optionally encrypted) token.
-    `payload` MUST contain at minimum: `sub` and `role`.
+    Generate a signed JWT token from the provided payload, optionally encrypting it as a JWE.
+    
+    The payload must include the `sub` and `role` claims. Standard claims (`iat`, `nbf`, `exp`, `jti`) are added automatically. The token is signed using the configured algorithm and key. If JWE encryption is enabled, the signed JWT is encrypted using direct symmetric encryption (AES-256-GCM).
+    
+    Parameters:
+        payload (Dict[str, Any]): Claims to include in the token. Must contain `sub` and `role`.
+        expires_delta (Optional[datetime.timedelta]): Optional expiration interval. Defaults to a configured value if not provided.
+    
+    Returns:
+        str: The signed (and optionally encrypted) token as a string.
+    
+    Raises:
+        ValueError: If the payload does not contain both `sub` and `role` claims.
     """
     if "sub" not in payload or "role" not in payload:
         raise ValueError("payload must contain 'sub' and 'role' claims")
@@ -92,8 +125,15 @@ def create_token(
 # --------------------------------------------------------------------------- #
 def verify_token(token: str) -> Dict[str, Any]:
     """
-    Verify signature, decrypt (if JWE), validate claims, and return payload.
-    Raises 401 on any failure.
+    Verifies a JWT or JWE token, ensuring signature validity, claim integrity, and required claims, and returns the decoded payload.
+    
+    If the token is encrypted (JWE), it is decrypted before verification. The function checks for token expiration, not-before, issued-at, and the presence of mandatory claims ("sub" and "role"). Raises an HTTP 401 error if the token is expired, invalid, or missing required claims.
+    
+    Parameters:
+        token (str): The JWT or JWE token string to verify.
+    
+    Returns:
+        Dict[str, Any]: The decoded payload of the verified token.
     """
     try:
         # --- Decrypt if JWE ----------------------------------------------------
