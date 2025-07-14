@@ -1,5 +1,5 @@
 """
-json_rbac – Minimal, standards-compliant JWT/JWE + RBAC for FastAPI.
+python-json-rbac – Minimal, standards-compliant JWT/JWE + RBAC for FastAPI.
 """
 
 from .core import create_token, verify_token

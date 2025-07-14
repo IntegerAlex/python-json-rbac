@@ -4,16 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-json-rbac"
-version = "0.1.0"
-description = "Minimal, secure JWT/JWE + RBAC for FastAPI"
+version = "0.2.0"
+authors = [
+  { name="Akshat Kotpalliwar", email="akshatkot@gmail.com" }
+]
+description = "Minimal, secure JWT/JWE + RBAC for FastAPI. Provides decorators and utilities for secure, role-based access control in modern Python web APIs."
+readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "fastapi>=0.110",
     "python-jose[cryptography]>=3.3",
 ]
+license = "LGPL-2.1-only"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Framework :: FastAPI",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Development Status :: 4 - Beta"
+]
 
 [project.urls]
-Homepage = "https://github.com/IntegerAlex/https://github.com/IntegerAlex/python-json-rbac"
+Homepage = "https://github.com/IntegerAlex/python-json-rbac"
+Issues = "https://github.com/IntegerAlex/python-json-rbac/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
