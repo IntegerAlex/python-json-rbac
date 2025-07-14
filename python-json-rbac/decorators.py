@@ -10,13 +10,20 @@ from .auth import get_current_user
 
 def rbac_protect(role: str) -> Callable:
     """
-    Decorator factory that enforces `role` requirement.
-    Usage:
-        @app.get("/admin")
-        @rbac_protect(role="admin")
-        def admin_endpoint(user=Depends(get_current_user)): ...
+    Creates a decorator that restricts access to FastAPI endpoints based on the required user role.
+    
+    Parameters:
+        role (str): The user role required to access the decorated endpoint.
+    
+    Returns:
+        Callable: A decorator that enforces authentication and role-based access control, raising HTTP 401 if the user is unauthenticated and HTTP 403 if the user lacks the required role.
     """
     def decorator(func: Callable) -> Callable:
+        """
+        Wraps a FastAPI endpoint to enforce that the current user is authenticated and has the required role.
+        
+        Raises an HTTP 401 Unauthorized exception if the user is not authenticated, or an HTTP 403 Forbidden exception if the user lacks the specified role. Supports both synchronous and asynchronous endpoint functions, and ensures FastAPI injects the current user dependency if not already present.
+        """
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             user = kwargs.get("user") or (
