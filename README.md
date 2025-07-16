@@ -2,6 +2,8 @@
 
 Minimal, secure JWT/JWE + RBAC for FastAPI. Provides decorators and utilities for secure, role-based access control in modern Python web APIs.
 
+[![PyPI Downloads](https://static.pepy.tech/badge/python-json-rbac)](https://pepy.tech/projects/python-json-rbac)
+
 ## Overview
 
 `python-json-rbac` provides decorators and utilities for secure, role-based access control (RBAC) in modern Python web APIs. It supports JWT and JWE tokens, integrates with FastAPI, and is designed for modular, scalable, and secure backend architectures.
