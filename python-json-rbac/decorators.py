@@ -8,7 +8,7 @@ import asyncio
 
 from fastapi import Depends, HTTPException, status
 
-from .auth import get_current_user
+from auth import get_current_user
 
 def rbac_protect(role: str) -> Callable:
     """
