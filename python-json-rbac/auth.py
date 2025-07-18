@@ -6,7 +6,7 @@ from typing import Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from .core import verify_token
+from core import verify_token
 
 oauth2_scheme = HTTPBearer(auto_error=False)
 
