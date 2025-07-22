@@ -5,7 +5,18 @@ import os
 import re
 import secrets
 import hashlib
+import logging
 from typing import Optional, List
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+# Add .env support
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # .env support is optional; recommend installing python-dotenv for local development
 
 # --- Secret Validation Constants ---------------------------------------------
 MIN_SECRET_LENGTH = 32  # Minimum 256 bits
@@ -115,7 +126,7 @@ ENABLE_JWE: bool = os.getenv("JWT_ENABLE_JWE", "false").lower() in {"1", "true",
 try:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
 except ValueError:
-    print("Warning: Invalid JWT_EXPIRE_MINUTES. Must be an integer. Using default 30.")
+    logger.warning("Invalid JWT_EXPIRE_MINUTES. Must be an integer. Using default 30.")
     ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # --- Security Configuration --------------------------------------------------
@@ -129,13 +140,13 @@ MAX_CLOCK_SKEW_SECONDS: int = int(os.getenv("JWT_MAX_CLOCK_SKEW", "300"))  # 5 m
 def validate_runtime_security() -> None:
     """Perform runtime security validations."""
     if ALGORITHM == "HS256" and len(JWT_SECRET) < 64 and STRICT_MODE:
-        print("Warning: For production use, consider using a longer JWT secret (64+ chars)")
+        logger.warning("For production use, consider using a longer JWT secret (64+ chars)")
     
     if not ENABLE_JWE and STRICT_MODE:
-        print("Warning: JWE encryption is disabled. Consider enabling for sensitive data")
+        logger.warning("JWE encryption is disabled. Consider enabling for sensitive data")
     
     if ACCESS_TOKEN_EXPIRE_MINUTES > 60 and STRICT_MODE:
-        print("Warning: Token expiration is longer than 1 hour. Consider shorter lifetimes")
+        logger.warning("Token expiration is longer than 1 hour. Consider shorter lifetimes")
 
 # Run runtime validation
 validate_runtime_security()

@@ -6,16 +6,20 @@ import json
 import secrets
 import hashlib
 import datetime
+import logging
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 
-from config import (
+from .config import (
     JWT_SECRET,
     JWT_SECRET_ID,
     _validate_secret_strength,
     _generate_secure_secret,
 )
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -70,7 +74,7 @@ class SecureKeyManager:
                               if metadata.get('last_used') else None,
                 )
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            print(f"Warning: Failed to load key metadata: {e}")
+            logger.warning(f"Failed to load key metadata: {e}")
     
     def _save_metadata(self) -> None:
         """Save key metadata to storage."""
@@ -95,9 +99,9 @@ class SecureKeyManager:
             with open(self.storage_path, 'w') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
-            print(f"Warning: Failed to save key metadata: {e}")
+            logger.warning(f"Failed to save key metadata: {e}")
     
-    def generate_key(self, algorithm: str = "HS256", length: int = 64) -> tuple[str, str]:
+    def generate_key(self, algorithm: str = "HS256", length: int = 64) -> Tuple[str, str]:
         """
         Generate a new cryptographically secure key.
         
@@ -176,7 +180,7 @@ class SecureKeyManager:
             if metadata.is_active
         }
     
-    def rotate_key(self, new_algorithm: str = "HS256", new_length: int = 64) -> tuple[str, str]:
+    def rotate_key(self, new_algorithm: str = "HS256", new_length: int = 64) -> Tuple[str, str]:
         """
         Perform key rotation by generating a new key and updating rotation counts.
         
@@ -272,7 +276,7 @@ def validate_current_secret() -> Dict[str, Any]:
     Returns:
         Dictionary with validation results and recommendations
     """
-    from config import get_secret_info
+    from .config import get_secret_info
     
     info = get_secret_info()
     

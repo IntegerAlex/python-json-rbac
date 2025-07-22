@@ -11,7 +11,7 @@ from jose.exceptions import JWTClaimsError
 from jose.utils import base64url_encode
 from fastapi import HTTPException, status
 
-from config import (
+from .config import (
     JWT_SECRET,
     JWT_SECRET_PREVIOUS,
     JWT_SECRET_ID,
