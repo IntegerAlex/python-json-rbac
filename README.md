@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="documentation/static/img/logo.png" alt="python-json-rbac Logo" height="120" />
+</p>
+
 # python-json-rbac
 
 [![PyPI version](https://badge.fury.io/py/python-json-rbac.svg)](https://badge.fury.io/py/python-json-rbac)
@@ -11,6 +15,7 @@ Minimal, secure JWT/JWE + RBAC for FastAPI. Provides decorators and utilities fo
 ---
 
 ## Table of Contents
+
 - [Overview](#overview)
 - [Features](#features)
 - [Installation](#installation)
@@ -30,6 +35,7 @@ Minimal, secure JWT/JWE + RBAC for FastAPI. Provides decorators and utilities fo
 `python-json-rbac` provides decorators and utilities for secure, role-based access control (RBAC) in modern Python web APIs. It supports JWT and JWE tokens, integrates with FastAPI, and is designed for modular, scalable, and secure backend architectures.
 
 ## Features
+
 - JWT and optional JWE (encrypted JWT) support
 - Role-based access control (RBAC) decorators
 - FastAPI dependency integration
@@ -49,17 +55,22 @@ pip install python-json-rbac
 ## Quickstart
 
 1. **Add a `.env` file** to your project root:
+
    ```env
    JWT_SECRET=your_super_secret_key
    JWT_ALGORITHM=HS256
    JWT_EXPIRE_MINUTES=30
    ```
+
 2. **Install dependencies** (if not already):
+
    ```bash
    pip install python-json-rbac
    ```
+
 3. **Create a FastAPI app:**
-   ```python
+
+```python
    from python_json_rbac.auth import create_access_token, get_current_user
    from python_json_rbac.decorators import rbac_protect
    from fastapi import FastAPI, Depends
@@ -86,6 +97,7 @@ pip install python-json-rbac
 ## Usage Example
 
 ### Symmetric (HS256) Example
+
 ```python
 from python_json_rbac.auth import create_access_token, get_current_user
 from python_json_rbac.decorators import rbac_protect
@@ -100,6 +112,7 @@ def admin_dashboard(user=Depends(get_current_user)):
 ```
 
 ### Asymmetric (RS256) Example
+
 ```python
 # In your .env:
 # JWT_ALGORITHM=RS256
@@ -111,27 +124,31 @@ from python_json_rbac.auth import create_access_token
 ```
 
 ## Advanced Usage & API
+
 - See the [docs/](docs/) directory for advanced RBAC, JWE, key rotation, and API reference.
 - Example: [docs/usage.md](docs/usage.md)
 
 ## Testing
 
 To run tests:
+
 ```bash
 pip install pytest
 pytest
 ```
 
 ## Security & Logging
+
 - All warnings and errors use Python's `logging` module for production readiness.
 - Secrets are validated for length and entropy.
 - JWE encryption and key rotation are supported.
 - See [docs/security.md](docs/security.md) for best practices.
 
 ## Contributing & Support
+
 - Contributions are welcome! Please open issues or submit pull requests on [GitHub](https://github.com/IntegerAlex/python-json-rbac).
 - For questions, use [GitHub Discussions](https://github.com/IntegerAlex/python-json-rbac/discussions) or [file an issue](https://github.com/IntegerAlex/python-json-rbac/issues).
 
 ## License
 
-LGPL-2.1-only. See [LICENSE](LICENSE) for details. 
+LGPL-2.1-only. See [LICENSE](LICENSE) for details.
