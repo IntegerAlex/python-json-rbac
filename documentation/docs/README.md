@@ -12,7 +12,7 @@ Welcome to the official documentation for `python-json-rbac`!
 
 - [Configuration](configuration/index.md)
 - [Token Management (core)](token-management/index.md)
-- [Key Management & Rotation](key_manager/index.md)
+- [Key Management & Rotation](key_manager/README.md)
 - [RBAC Decorators](rbac/index.md)
 - [Authentication Utilities](authentication/index.md)
 - [JWT Key Management CLI](cli/index.md)
