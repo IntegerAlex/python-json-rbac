@@ -27,7 +27,11 @@ except ImportError as e:
 
 
 def cmd_generate(args) -> None:
-    """Generate a new secure secret."""
+    """
+    Generates a new secure secret of specified length and outputs it to a file or stdout.
+    
+    If `show_info` is set, displays the length and entropy of the generated secret.
+    """
     secret = generate_secure_secret(args.length)
     
     if args.output_file:
@@ -47,7 +51,11 @@ def cmd_generate(args) -> None:
 
 
 def cmd_validate(args) -> None:
-    """Validate the current JWT secret configuration."""
+    """
+    Validates the current JWT secret configuration and prints a security report.
+    
+    If the secret is valid, displays a confirmation message and security score. If issues are found, lists recommendations for improvement. When verbose mode is enabled, prints detailed secret metadata including algorithm, length, entropy, JWE status, key rotation, and strict mode. Exits with an error message if validation fails.
+    """
     try:
         validation = validate_current_secret()
         
@@ -82,7 +90,11 @@ def cmd_validate(args) -> None:
 
 
 def cmd_rotate(args) -> None:
-    """Perform key rotation."""
+    """
+    Performs JWT key rotation, generating a new secret and key ID using the specified algorithm and length.
+    
+    If dry-run mode is enabled, displays the planned rotation action without making changes. Otherwise, rotates the key, outputs the new secret and key ID, and optionally writes the secret to a file. Advises updating environment variables for proper JWT secret rotation. Exits with an error message if rotation fails.
+    """
     try:
         manager = get_key_manager(args.storage_path)
         
@@ -122,7 +134,11 @@ def cmd_rotate(args) -> None:
 
 
 def cmd_status(args) -> None:
-    """Show key management status."""
+    """
+    Displays the current status of JWT key management, including active key details, rotation statistics, and a summary of all keys if verbose mode is enabled.
+    
+    Prints information such as the active key ID, key age, rotation count, last usage, total and inactive keys, and the current rotation plan. In verbose mode, lists all keys with their metadata. Exits with an error message if status retrieval fails.
+    """
     try:
         manager = get_key_manager(args.storage_path)
         status = manager.get_rotation_status()
@@ -162,7 +178,11 @@ def cmd_status(args) -> None:
 
 
 def cmd_cleanup(args) -> None:
-    """Clean up old keys."""
+    """
+    Removes JWT keys older than the specified maximum age in days.
+    
+    If dry run mode is enabled, reports which keys would be removed without performing deletion. Prints the number of keys cleaned up upon success. Exits with an error message if cleanup fails.
+    """
     try:
         manager = get_key_manager(args.storage_path)
         
@@ -180,7 +200,11 @@ def cmd_cleanup(args) -> None:
 
 
 def cmd_export_config(args) -> None:
-    """Export current configuration for deployment."""
+    """
+    Exports the current JWT secret configuration and recommendations in JSON format.
+    
+    If an output file is specified, writes the configuration to that file; otherwise, prints the configuration to stdout. Exits with an error message if export fails.
+    """
     try:
         info = get_secret_info()
         
@@ -205,7 +229,11 @@ def cmd_export_config(args) -> None:
 
 
 def main():
-    """Main CLI entry point."""
+    """
+    Parses command-line arguments and dispatches JWT key management operations based on the selected subcommand.
+    
+    This function sets up the CLI interface, handles argument parsing for all supported subcommands (generate, validate, rotate, status, cleanup, export-config), enforces required environment variables, and executes the corresponding command function. Exits with an error message on invalid usage or unexpected exceptions.
+    """
     parser = argparse.ArgumentParser(
         description="JWT Key Management Utility",
         formatter_class=argparse.RawDescriptionHelpFormatter,

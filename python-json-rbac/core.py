@@ -35,17 +35,17 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 def _load_key(path: Optional[str], is_private: bool = False) -> str:
     """
-    Loads an RSA key from the specified file path.
+    Load an RSA key from a file and validate its format.
     
     Parameters:
-        path (Optional[str]): Path to the RSA key file.
-        is_private (bool): Indicates whether the key is a private key.
+        path (Optional[str]): The file path to the RSA key.
+        is_private (bool): Set to True to load a private key, or False for a public key.
     
     Returns:
-        str: The contents of the RSA key file as a string.
+        str: The RSA key contents as a string.
     
     Raises:
-        RuntimeError: If the key file does not exist or the path is not provided.
+        RuntimeError: If the file does not exist, the path is not provided, or the key format is invalid.
     """
     if not path or not os.path.exists(path):
         raise RuntimeError(f"Key file not found: {path}")
@@ -66,9 +66,13 @@ def _load_key(path: Optional[str], is_private: bool = False) -> str:
 
 def _get_signing_key() -> str:
     """
-    Return the signing key for JWT creation based on the configured algorithm.
+    Returns the signing key used for JWT creation according to the configured algorithm.
     
-    For HS256, returns the symmetric secret. For RS256, loads and returns the RSA private key from the configured file path. Raises a RuntimeError if the private key path is missing for RS256, or NotImplementedError for unsupported algorithms.
+    For HS256, returns the symmetric secret. For RS256, loads and returns the RSA private key from the configured file path.
+    
+    Raises:
+        RuntimeError: If the private key path is missing for RS256.
+        NotImplementedError: If the configured algorithm is not supported.
     """
     if ALGORITHM == "HS256":
         return JWT_SECRET
@@ -80,10 +84,9 @@ def _get_signing_key() -> str:
 
 def _get_verify_keys() -> List[Tuple[str, str]]:
     """
-    Returns the keys used to verify JWT signatures with key rotation support.
+    Return a list of (key, key_id) tuples for verifying JWT signatures, supporting key rotation.
     
-    For HS256, returns the current secret and optionally the previous secret for rotation.
-    For RS256, returns the public key. Returns a list of (key, key_id) tuples.
+    For HS256, includes the current and, if enabled, previous secrets with their key IDs. For RS256, includes the public key. Raises an error if required keys are missing or the algorithm is unsupported.
     """
     keys = []
     
@@ -107,7 +110,9 @@ def _get_verify_keys() -> List[Tuple[str, str]]:
 
 def _get_verify_key() -> str:
     """
-    Legacy method - returns the primary verify key for backward compatibility.
+    Return the primary verification key used for JWT signature validation.
+    
+    This legacy method provides backward compatibility by returning the first key from the list of available verification keys.
     """
     keys = _get_verify_keys()
     return keys[0][0] if keys else ""
@@ -121,20 +126,21 @@ def create_token(
     key_id: Optional[str] = None,
 ) -> str:
     """
-    Generate a signed JWT token from the provided payload, optionally encrypting it as a JWE.
+    Creates a signed JWT token from the given payload, optionally encrypting it as a JWE.
     
-    The payload must include the `sub` and `role` claims. Standard claims (`iat`, `nbf`, `exp`, `jti`) are added automatically. The token is signed using the configured algorithm and key. If JWE encryption is enabled, the signed JWT is encrypted using direct symmetric encryption (AES-256-GCM).
+    The payload must include the `sub` and `role` claims. Standard claims (`iat`, `nbf`, `exp`, `jti`) are added automatically. The token is signed using the configured algorithm and key, with a `kid` claim included for HS256 to support key rotation. If JWE encryption is enabled, the signed JWT is encrypted using direct symmetric encryption (AES-256-GCM).
     
     Parameters:
-        payload (Dict[str, Any]): Claims to include in the token. Must contain `sub` and `role`.
-        expires_delta (Optional[datetime.timedelta]): Optional expiration interval. Defaults to a configured value if not provided.
-        key_id (Optional[str]): Key ID for tracking which key was used for signing.
+        payload (Dict[str, Any]): Token claims, must include `sub` and `role`.
+        expires_delta (Optional[datetime.timedelta]): Optional expiration interval for the token.
+        key_id (Optional[str]): Key identifier for signing, used for key rotation tracking.
     
     Returns:
-        str: The signed (and optionally encrypted) token as a string.
+        str: The signed JWT or encrypted JWE token as a string.
     
     Raises:
-        ValueError: If the payload does not contain both `sub` and `role` claims.
+        ValueError: If `sub` or `role` claims are missing from the payload.
+        RuntimeError: If token signing or encryption fails.
     """
     if "sub" not in payload or "role" not in payload:
         raise ValueError("payload must contain 'sub' and 'role' claims")
@@ -187,15 +193,11 @@ def create_token(
 # --------------------------------------------------------------------------- #
 def verify_token(token: str) -> Dict[str, Any]:
     """
-    Verifies a JWT or JWE token with key rotation support, ensuring signature validity, 
-    claim integrity, and required claims, and returns the decoded payload.
+    Verifies a JWT or JWE token, supporting key rotation, decryption, and strict claim validation.
     
-    If the token is encrypted (JWE), it is decrypted before verification. The function 
-    checks for token expiration, not-before, issued-at, and the presence of mandatory 
-    claims ("sub" and "role"). Supports graceful key rotation by trying multiple keys.
+    If JWE encryption is enabled, attempts decryption with the current and previous keys as needed. Verifies the token signature against all available verification keys, supporting key rotation. Checks standard claims for expiration, not-before, and issued-at times, and validates the presence and integrity of required claims ("sub" and "role"). In strict mode, performs additional security checks on the token payload.
     
-    Parameters:
-        token (str): The JWT or JWE token string to verify.
+    Raises an HTTP 401 error if the token is missing, expired, invalid, or improperly formatted.
     
     Returns:
         Dict[str, Any]: The decoded payload of the verified token.
@@ -299,13 +301,10 @@ def verify_token(token: str) -> Dict[str, Any]:
 
 def _validate_token_claims(payload: Dict[str, Any]) -> None:
     """
-    Validate required claims in the token payload.
+    Validates that the token payload contains required claims with correct types and non-empty values.
     
-    Args:
-        payload: The decoded JWT payload
-        
     Raises:
-        JWTClaimsError: If required claims are missing or invalid
+        JWTClaimsError: If 'sub' or 'role' claims are missing, not strings, or empty; or if 'jti' is present but empty.
     """
     # Check required claims
     if "sub" not in payload or "role" not in payload:
@@ -324,10 +323,9 @@ def _validate_token_claims(payload: Dict[str, Any]) -> None:
 
 def _perform_security_checks(payload: Dict[str, Any]) -> None:
     """
-    Perform additional security checks in strict mode.
+    Performs strict-mode security checks on a decoded JWT payload.
     
-    Args:
-        payload: The decoded JWT payload
+    Checks for tokens issued more than 24 hours ago and logs a warning if detected. If key rotation is enabled and the token was signed with the previous key, logs that the token is within the rotation grace period.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
     
@@ -351,10 +349,10 @@ def _perform_security_checks(payload: Dict[str, Any]) -> None:
 # --------------------------------------------------------------------------- #
 def get_key_rotation_status() -> Dict[str, Any]:
     """
-    Get the current key rotation status.
+    Return a summary of the current JWT/JWE key rotation configuration and status.
     
     Returns:
-        Dict containing rotation status information
+        Dictionary with key rotation settings, including whether rotation is enabled, current and previous key IDs, grace period in hours, signing algorithm, and JWE enablement.
     """
     return {
         "rotation_enabled": KEY_ROTATION_ENABLED,
@@ -370,14 +368,14 @@ def create_token_with_rotation_metadata(
     expires_delta: Optional[datetime.timedelta] = None,
 ) -> Dict[str, Any]:
     """
-    Create a token and return it with rotation metadata.
+    Create a JWT or JWE access token and return it along with key rotation and configuration metadata.
     
-    Args:
-        payload: Token payload
-        expires_delta: Optional expiration time
-        
+    Parameters:
+        payload (Dict[str, Any]): The token payload containing required claims.
+        expires_delta (Optional[datetime.timedelta]): Optional token expiration duration.
+    
     Returns:
-        Dict containing token and metadata
+        Dict[str, Any]: A dictionary containing the access token, token type, expiration in seconds, key ID, signing algorithm, and JWE enablement status.
     """
     token = create_token(payload, expires_delta)
     

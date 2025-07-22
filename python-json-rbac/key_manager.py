@@ -51,17 +51,21 @@ class SecureKeyManager:
     
     def __init__(self, storage_path: Optional[str] = None):
         """
-        Initialize the key manager.
+        Initializes the SecureKeyManager, optionally loading key metadata from a specified storage path.
         
-        Args:
-            storage_path: Optional path for storing key metadata
+        Parameters:
+            storage_path (Optional[str]): Path to persist key metadata. If not provided, metadata is managed in memory only.
         """
         self.storage_path = Path(storage_path) if storage_path else None
         self._keys: Dict[str, KeyMetadata] = {}
         self._load_metadata()
     
     def _load_metadata(self) -> None:
-        """Load key metadata from storage."""
+        """
+        Loads key metadata from the storage file into the manager's internal state.
+        
+        If the storage file does not exist or is invalid, the method returns without modifying the current state. Warnings are logged for any errors encountered during loading or parsing.
+        """
         if not self.storage_path or not self.storage_path.exists():
             return
         
@@ -84,7 +88,11 @@ class SecureKeyManager:
             logger.warning(f"Failed to load key metadata: {e}")
     
     def _save_metadata(self) -> None:
-        """Save key metadata to storage."""
+        """
+        Persist the current key metadata to the configured storage path in JSON format.
+        
+        If the storage path is not set, the function does nothing. Creates parent directories as needed. Logs a warning if saving fails.
+        """
         if not self.storage_path:
             return
         
@@ -110,14 +118,14 @@ class SecureKeyManager:
     
     def generate_key(self, algorithm: str = "HS256", length: int = 64) -> Tuple[str, str]:
         """
-        Generate a new cryptographically secure key.
+        Generates a new cryptographically secure secret key and stores its metadata.
         
-        Args:
-            algorithm: JWT algorithm the key will be used for
-            length: Key length in characters (for URL-safe base64)
-            
+        Parameters:
+        	algorithm (str): The JWT algorithm associated with the key.
+        	length (int): The desired length of the generated key in characters.
+        
         Returns:
-            Tuple of (secret, key_id)
+        	tuple: A tuple containing the generated secret and its unique key ID.
         """
         secret = _generate_secure_secret(length)
         _validate_secret_strength(secret)
@@ -139,9 +147,10 @@ class SecureKeyManager:
     
     def activate_key(self, key_id: str) -> None:
         """
-        Activate a key and deactivate others atomically.
-        Args:
-            key_id: The key ID to activate
+        Activates the specified key by key ID and deactivates all others.
+        
+        Raises:
+            ValueError: If the specified key ID does not exist.
         """
         if key_id not in self._keys:
             raise ValueError(f"Key {key_id} not found")
@@ -159,25 +168,38 @@ class SecureKeyManager:
             self._save_metadata()
     
     def get_active_key_id(self) -> Optional[str]:
-        """Get the currently active key ID."""
+        """
+        Return the key ID of the currently active key, or None if no key is active.
+        
+        Returns:
+            The key ID of the active key, or None if no active key exists.
+        """
         for key_id, metadata in self._keys.items():
             if metadata.is_active:
                 return key_id
         return None
     
     def get_key_metadata(self, key_id: str) -> Optional[KeyMetadata]:
-        """Get metadata for a specific key."""
+        """
+        Retrieve the metadata associated with a specific key ID.
+        
+        Parameters:
+            key_id (str): The unique identifier of the key.
+        
+        Returns:
+            Optional[KeyMetadata]: The metadata for the specified key, or None if the key does not exist.
+        """
         return self._keys.get(key_id)
     
     def list_keys(self, include_inactive: bool = False) -> Dict[str, KeyMetadata]:
         """
-        List all keys with their metadata.
+        Returns a dictionary of key IDs to their metadata, optionally including inactive keys.
         
-        Args:
-            include_inactive: Whether to include inactive keys
-            
+        Parameters:
+            include_inactive (bool): If True, includes both active and inactive keys; otherwise, only active keys are returned.
+        
         Returns:
-            Dictionary of key_id -> KeyMetadata
+            Dict[str, KeyMetadata]: Mapping of key IDs to their corresponding metadata.
         """
         if include_inactive:
             return self._keys.copy()
@@ -190,14 +212,14 @@ class SecureKeyManager:
     
     def rotate_key(self, new_algorithm: str = "HS256", new_length: int = 64) -> Tuple[str, str]:
         """
-        Perform key rotation by generating a new key and updating rotation counts.
+        Generates and activates a new secret key, incrementing the rotation count of the previously active key.
         
-        Args:
-            new_algorithm: Algorithm for the new key
-            new_length: Length for the new key
-            
+        Parameters:
+            new_algorithm (str): Algorithm to use for the new key.
+            new_length (int): Length of the new key in bytes.
+        
         Returns:
-            Tuple of (new_secret, new_key_id)
+            Tuple[str, str]: The newly generated secret and its key ID.
         """
         # Generate new key
         new_secret, new_key_id = self.generate_key(new_algorithm, new_length)
@@ -214,12 +236,14 @@ class SecureKeyManager:
     
     def cleanup_old_keys(self, max_age_days: int = 30, dry_run: bool = False) -> Any:
         """
-        Clean up old inactive keys, or preview which would be removed if dry_run is True.
-        Args:
-            max_age_days: Maximum age in days for inactive keys
-            dry_run: If True, only return keys that would be removed
+        Removes inactive keys older than the specified number of days, or previews keys eligible for removal if dry_run is True.
+        
+        Parameters:
+            max_age_days (int): The maximum age in days for inactive keys to retain.
+            dry_run (bool): If True, returns a list of keys that would be removed without deleting them.
+        
         Returns:
-            Number of keys removed, or list of keys that would be removed if dry_run
+            int or List[str]: The number of keys removed, or a list of key IDs that would be removed if dry_run is True.
         """
         cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=max_age_days)
         keys_to_remove = [key_id for key_id, metadata in self._keys.items()
@@ -233,7 +257,12 @@ class SecureKeyManager:
         return len(keys_to_remove)
     
     def get_rotation_status(self) -> Dict[str, Any]:
-        """Get detailed rotation status information."""
+        """
+        Return detailed information about the current key rotation status.
+        
+        Returns:
+            A dictionary containing the active key ID, age of the active key in hours, total number of keys, count of inactive keys, rotation count of the active key, and the last used timestamp of the active key.
+        """
         active_key_id = self.get_active_key_id()
         active_metadata = self._keys.get(active_key_id) if active_key_id else None
         
@@ -256,13 +285,13 @@ _key_manager: Optional[SecureKeyManager] = None
 
 def get_key_manager(storage_path: Optional[str] = None) -> SecureKeyManager:
     """
-    Get the global key manager instance.
+    Returns the singleton instance of the SecureKeyManager, initializing it with the given storage path if necessary.
     
-    Args:
-        storage_path: Optional path for key metadata storage
-        
+    Parameters:
+        storage_path (Optional[str]): Optional file path for persisting key metadata.
+    
     Returns:
-        SecureKeyManager instance
+        SecureKeyManager: The global key manager instance.
     """
     global _key_manager
     with _key_manager_lock:
@@ -274,10 +303,10 @@ def get_key_manager(storage_path: Optional[str] = None) -> SecureKeyManager:
 
 def validate_current_secret() -> Dict[str, Any]:
     """
-    Validate the current JWT secret and return security information.
+    Evaluates the current JWT secret's security properties and provides recommendations for improvement.
     
     Returns:
-        Dictionary with validation results and recommendations
+        dict: Contains validation status, a security score, actionable recommendations, and detailed secret information.
     """
     from .config import get_secret_info
     
@@ -322,7 +351,15 @@ def validate_current_secret() -> Dict[str, Any]:
 
 # Utility functions for easy access
 def generate_secure_secret(length: int = 64) -> str:
-    """Generate a new secure secret."""
+    """
+    Generate a cryptographically secure random secret string of the specified length.
+    
+    Parameters:
+        length (int): The desired length of the generated secret.
+    
+    Returns:
+        str: A securely generated secret string.
+    """
     return _generate_secure_secret(length)
 
 
@@ -331,14 +368,14 @@ def create_rotation_plan(
     grace_period_days: int = 7,
 ) -> Dict[str, Any]:
     """
-    Create a key rotation plan.
+    Generate a rotation plan for JWT secret keys based on the specified rotation interval and grace period.
     
-    Args:
-        rotation_interval_days: How often to rotate keys
-        grace_period_days: Grace period for old keys
-        
+    Parameters:
+        rotation_interval_days (int): Number of days after which a key should be rotated.
+        grace_period_days (int): Additional days allowed before enforcing rotation.
+    
     Returns:
-        Dictionary with rotation plan details
+        Dict[str, Any]: A dictionary describing the recommended action ("initialize", "rotate", or "wait"), an explanatory message, urgency level, and time until next rotation if applicable.
     """
     manager = get_key_manager()
     status = manager.get_rotation_status()
