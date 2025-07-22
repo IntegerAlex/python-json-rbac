@@ -1,4 +1,13 @@
-# python-json-rbac Usage Guide
+---
+title: General Usage Guide
+description: How to use python-json-rbac in your projects.
+keywords: [usage, guide, python-json-rbac]
+---
+
+# Usage Guide
+
+See the [Introduction](intro.md) for a quickstart.
+See [Configuration](configuration/index.md) for all config options.
 
 ## Overview
 `python-json-rbac` is a modular, production-grade library for JWT/JWE authentication and role-based access control (RBAC) in FastAPI and other Python web frameworks. It supports both symmetric (HS256) and asymmetric (RS256) JWTs, optional JWE encryption, and secure key rotation.
