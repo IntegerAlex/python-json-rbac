@@ -24,7 +24,15 @@ MIN_SECRET_ENTROPY = 3.5  # Bits per character minimum
 ALLOWED_SECRET_CHARS = re.compile(r'^[A-Za-z0-9+/=\-_]+$')  # Base64 + URL-safe chars
 
 def _calculate_entropy(secret: str) -> float:
-    """Calculate the entropy of a string in bits per character."""
+    """
+    Estimate the Shannon entropy of a string, representing its average bits of information per character.
+    
+    Parameters:
+        secret (str): The input string to analyze.
+    
+    Returns:
+        float: The calculated entropy in bits per character.
+    """
     if not secret:
         return 0.0
     
@@ -46,14 +54,10 @@ def _calculate_entropy(secret: str) -> float:
 
 def _validate_secret_strength(secret: str, min_length: int = MIN_SECRET_LENGTH) -> None:
     """
-    Validate JWT secret strength and format.
+    Validates the strength and format of a JWT secret, enforcing minimum length, allowed characters, entropy, and resistance to common weak patterns.
     
-    Args:
-        secret: The secret to validate
-        min_length: Minimum required length in characters
-        
     Raises:
-        ValueError: If secret doesn't meet security requirements
+        ValueError: If the secret is empty, too short, contains invalid characters, has insufficient entropy, matches a common weak value, or has excessive repeated characters.
     """
     if not secret:
         raise ValueError("JWT secret cannot be empty")
@@ -77,7 +81,15 @@ def _validate_secret_strength(secret: str, min_length: int = MIN_SECRET_LENGTH) 
         raise ValueError("JWT secret has too many repeated characters")
 
 def _generate_secure_secret(length: int = 64) -> str:
-    """Generate a cryptographically secure secret."""
+    """
+    Generate a cryptographically secure, URL-safe secret string of the specified length.
+    
+    Parameters:
+        length (int): Desired length of the generated secret in characters. Defaults to 64.
+    
+    Returns:
+        str: A random, URL-safe secret string suitable for use as a JWT secret.
+    """
     return secrets.token_urlsafe(length)
 
 # --- Secrets / Keys ----------------------------------------------------------
@@ -138,7 +150,11 @@ MAX_CLOCK_SKEW_SECONDS: int = int(os.getenv("JWT_MAX_CLOCK_SKEW", "300"))  # 5 m
 
 # --- Runtime Security Validation ---------------------------------------------
 def validate_runtime_security() -> None:
-    """Perform runtime security validations."""
+    """
+    Performs runtime security checks on JWT configuration and logs warnings for insecure settings.
+    
+    Logs warnings if the JWT secret is too short for HS256, if JWE encryption is disabled, or if the access token expiration exceeds one hour, when strict mode is enabled.
+    """
     if ALGORITHM == "HS256" and len(JWT_SECRET) < 64 and STRICT_MODE:
         logger.warning("For production use, consider using a longer JWT secret (64+ chars)")
     
@@ -153,7 +169,14 @@ validate_runtime_security()
 
 # --- Utility Functions -------------------------------------------------------
 def get_secret_info() -> dict:
-    """Get information about the current secret configuration (without exposing secrets)."""
+    """
+    Return non-sensitive metadata about the current JWT secret configuration.
+    
+    The returned dictionary includes secret identifiers, key rotation status, algorithm, encryption and strict mode flags, secret length, and an entropy estimate, but does not expose the actual secret values.
+    
+    Returns:
+        dict: Dictionary containing metadata about the JWT secret configuration.
+    """
     return {
         "primary_secret_id": JWT_SECRET_ID,
         "previous_secret_id": JWT_SECRET_PREVIOUS_ID,
@@ -166,7 +189,12 @@ def get_secret_info() -> dict:
     }
 
 def generate_new_secret() -> str:
-    """Generate a new cryptographically secure secret for rotation."""
+    """
+    Generate a new cryptographically secure secret string suitable for JWT key rotation.
+    
+    Returns:
+        str: A URL-safe, high-entropy secret string.
+    """
     return _generate_secure_secret()
 
 __all__ = [
