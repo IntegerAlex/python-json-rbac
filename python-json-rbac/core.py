@@ -1,9 +1,10 @@
 """
-JWT / JWE creation and verification.
+JWT / JWE creation and verification with secure key rotation.
 """
 import datetime
 import os
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict, Optional, List, Tuple
 
 from jose import jwt, JWTError, ExpiredSignatureError
 from jose.exceptions import JWTClaimsError
@@ -12,40 +13,66 @@ from fastapi import HTTPException, status
 
 from .config import (
     JWT_SECRET,
+    JWT_SECRET_PREVIOUS,
+    JWT_SECRET_ID,
+    JWT_SECRET_PREVIOUS_ID,
     PRIVATE_KEY_PATH,
     PUBLIC_KEY_PATH,
     ALGORITHM,
     ENABLE_JWE,
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    KEY_ROTATION_ENABLED,
+    KEY_ROTATION_GRACE_PERIOD_HOURS,
+    STRICT_MODE,
+    MAX_CLOCK_SKEW_SECONDS,
 )
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 #                               KEY HELPERS                                   #
 # --------------------------------------------------------------------------- #
 def _load_key(path: Optional[str], is_private: bool = False) -> str:
     """
-    Loads an RSA key from the specified file path.
+    Load an RSA key from a file and validate its format.
     
     Parameters:
-        path (Optional[str]): Path to the RSA key file.
-        is_private (bool): Indicates whether the key is a private key.
+        path (Optional[str]): The file path to the RSA key.
+        is_private (bool): Set to True to load a private key, or False for a public key.
     
     Returns:
-        str: The contents of the RSA key file as a string.
+        str: The RSA key contents as a string.
     
     Raises:
-        RuntimeError: If the key file does not exist or the path is not provided.
+        RuntimeError: If the file does not exist, the path is not provided, or the key format is invalid.
     """
     if not path or not os.path.exists(path):
         raise RuntimeError(f"Key file not found: {path}")
-    with open(path, "rb") as f:
-        return f.read().decode()
+    
+    try:
+        with open(path, "rb") as f:
+            key_content = f.read().decode()
+        
+        # Basic validation for RSA key format
+        if is_private and "PRIVATE KEY" not in key_content:
+            raise RuntimeError(f"Invalid private key format in {path}")
+        elif not is_private and "PUBLIC KEY" not in key_content:
+            raise RuntimeError(f"Invalid public key format in {path}")
+            
+        return key_content
+    except Exception as e:
+        raise RuntimeError(f"Failed to load key from {path}: {e}")
 
 def _get_signing_key() -> str:
     """
-    Return the signing key for JWT creation based on the configured algorithm.
+    Returns the signing key used for JWT creation according to the configured algorithm.
     
-    For HS256, returns the symmetric secret. For RS256, loads and returns the RSA private key from the configured file path. Raises a RuntimeError if the private key path is missing for RS256, or NotImplementedError for unsupported algorithms.
+    For HS256, returns the symmetric secret. For RS256, loads and returns the RSA private key from the configured file path.
+    
+    Raises:
+        RuntimeError: If the private key path is missing for RS256.
+        NotImplementedError: If the configured algorithm is not supported.
     """
     if ALGORITHM == "HS256":
         return JWT_SECRET
@@ -55,19 +82,40 @@ def _get_signing_key() -> str:
         return _load_key(PRIVATE_KEY_PATH, is_private=True)
     raise NotImplementedError(ALGORITHM)
 
-def _get_verify_key() -> str:
+def _get_verify_keys() -> List[Tuple[str, str]]:
     """
-    Returns the key used to verify JWT signatures based on the configured algorithm.
+    Return a list of (key, key_id) tuples for verifying JWT signatures, supporting key rotation.
     
-    For HS256, returns the shared secret. For RS256, loads and returns the public key from the configured file path. Raises a RuntimeError if the public key path is missing for RS256, or NotImplementedError for unsupported algorithms.
+    For HS256, includes the current and, if enabled, previous secrets with their key IDs. For RS256, includes the public key. Raises an error if required keys are missing or the algorithm is unsupported.
     """
+    keys = []
+    
     if ALGORITHM == "HS256":
-        return JWT_SECRET
-    if ALGORITHM == "RS256":
+        # Primary key
+        keys.append((JWT_SECRET, JWT_SECRET_ID))
+        
+        # Previous key for rotation support
+        if KEY_ROTATION_ENABLED and JWT_SECRET_PREVIOUS:
+            keys.append((JWT_SECRET_PREVIOUS, JWT_SECRET_PREVIOUS_ID))
+            
+    elif ALGORITHM == "RS256":
         if not PUBLIC_KEY_PATH:
             raise RuntimeError("JWT_PUBLIC_KEY_PATH required for RS256")
-        return _load_key(PUBLIC_KEY_PATH)
-    raise NotImplementedError(ALGORITHM)
+        public_key = _load_key(PUBLIC_KEY_PATH)
+        keys.append((public_key, "rsa-key"))
+    else:
+        raise NotImplementedError(ALGORITHM)
+    
+    return keys
+
+def _get_verify_key() -> str:
+    """
+    Return the primary verification key used for JWT signature validation.
+    
+    This legacy method provides backward compatibility by returning the first key from the list of available verification keys.
+    """
+    keys = _get_verify_keys()
+    return keys[0][0] if keys else ""
 
 # --------------------------------------------------------------------------- #
 #                          TOKEN CREATION (JWT / JWE)                         #
@@ -75,27 +123,32 @@ def _get_verify_key() -> str:
 def create_token(
     payload: Dict[str, Any],
     expires_delta: Optional[datetime.timedelta] = None,
+    key_id: Optional[str] = None,
 ) -> str:
     """
-    Generate a signed JWT token from the provided payload, optionally encrypting it as a JWE.
+    Creates a signed JWT token from the given payload, optionally encrypting it as a JWE.
     
-    The payload must include the `sub` and `role` claims. Standard claims (`iat`, `nbf`, `exp`, `jti`) are added automatically. The token is signed using the configured algorithm and key. If JWE encryption is enabled, the signed JWT is encrypted using direct symmetric encryption (AES-256-GCM).
+    The payload must include the `sub` and `role` claims. Standard claims (`iat`, `nbf`, `exp`, `jti`) are added automatically. The token is signed using the configured algorithm and key, with a `kid` claim included for HS256 to support key rotation. If JWE encryption is enabled, the signed JWT is encrypted using direct symmetric encryption (AES-256-GCM).
     
     Parameters:
-        payload (Dict[str, Any]): Claims to include in the token. Must contain `sub` and `role`.
-        expires_delta (Optional[datetime.timedelta]): Optional expiration interval. Defaults to a configured value if not provided.
+        payload (Dict[str, Any]): Token claims, must include `sub` and `role`.
+        expires_delta (Optional[datetime.timedelta]): Optional expiration interval for the token.
+        key_id (Optional[str]): Key identifier for signing, used for key rotation tracking.
     
     Returns:
-        str: The signed (and optionally encrypted) token as a string.
+        str: The signed JWT or encrypted JWE token as a string.
     
     Raises:
-        ValueError: If the payload does not contain both `sub` and `role` claims.
+        ValueError: If `sub` or `role` claims are missing from the payload.
+        RuntimeError: If token signing or encryption fails.
     """
     if "sub" not in payload or "role" not in payload:
         raise ValueError("payload must contain 'sub' and 'role' claims")
 
     now = datetime.datetime.now(datetime.timezone.utc)
     exp = now + (expires_delta or datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    
+    # Add standard claims
     claims = {
         "iat": now,
         "nbf": now,
@@ -103,64 +156,234 @@ def create_token(
         "jti": base64url_encode(os.urandom(16)).decode(),  # 128-bit nonce
         **payload,
     }
+    
+    # Add key ID for rotation tracking if using HS256
+    if ALGORITHM == "HS256":
+        claims["kid"] = key_id or JWT_SECRET_ID
 
     signing_key = _get_signing_key()
-    jwt_token = jwt.encode(claims, signing_key, algorithm=ALGORITHM)
+    
+    try:
+        jwt_token = jwt.encode(claims, signing_key, algorithm=ALGORITHM)
+    except Exception as e:
+        logger.error(f"Failed to create JWT token: {e}")
+        raise RuntimeError(f"Token creation failed: {e}")
 
     if not ENABLE_JWE:
         return jwt_token
 
     # --- Optional JWE encryption (dir + A256GCM) -----------------------------
-    from jose import jwe
+    try:
+        from jose import jwe
 
-    return jwe.encrypt(
-        jwt_token,
-        key=JWT_SECRET.encode(),  # direct symmetric key
-        algorithm="dir",
-        encryption="A256GCM",
-    ).decode()
+        encrypted_token = jwe.encrypt(
+            jwt_token,
+            key=JWT_SECRET.encode(),  # direct symmetric key
+            algorithm="dir",
+            encryption="A256GCM",
+        ).decode()
+        
+        return encrypted_token
+    except Exception as e:
+        logger.error(f"Failed to encrypt token: {e}")
+        raise RuntimeError(f"Token encryption failed: {e}")
 
 # --------------------------------------------------------------------------- #
 #                             TOKEN VERIFICATION                              #
 # --------------------------------------------------------------------------- #
 def verify_token(token: str) -> Dict[str, Any]:
     """
-    Verifies a JWT or JWE token, ensuring signature validity, claim integrity, and required claims, and returns the decoded payload.
+    Verifies a JWT or JWE token, supporting key rotation, decryption, and strict claim validation.
     
-    If the token is encrypted (JWE), it is decrypted before verification. The function checks for token expiration, not-before, issued-at, and the presence of mandatory claims ("sub" and "role"). Raises an HTTP 401 error if the token is expired, invalid, or missing required claims.
+    If JWE encryption is enabled, attempts decryption with the current and previous keys as needed. Verifies the token signature against all available verification keys, supporting key rotation. Checks standard claims for expiration, not-before, and issued-at times, and validates the presence and integrity of required claims ("sub" and "role"). In strict mode, performs additional security checks on the token payload.
     
-    Parameters:
-        token (str): The JWT or JWE token string to verify.
+    Raises an HTTP 401 error if the token is missing, expired, invalid, or improperly formatted.
     
     Returns:
         Dict[str, Any]: The decoded payload of the verified token.
     """
-    try:
-        # --- Decrypt if JWE ----------------------------------------------------
-        if ENABLE_JWE:
-            from jose import jwe
-
-            token = jwe.decrypt(token, key=JWT_SECRET.encode()).decode()
-
-        # --- Verify signature & claims ----------------------------------------
-        verify_key = _get_verify_key()
-        payload = jwt.decode(
-            token,
-            verify_key,
-            algorithms=[ALGORITHM],
-            options={"verify_exp": True, "verify_nbf": True, "verify_iat": True},
+    if not token or not token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Token is required"
         )
 
-        # --- Enforce required claims ------------------------------------------
-        if "sub" not in payload or "role" not in payload:
-            raise JWTClaimsError("Missing required claims")
+    try:
+        # --- Decrypt if JWE ----------------------------------------------------
+        decrypted_token = token
+        if ENABLE_JWE:
+            try:
+                from jose import jwe
+                decrypted_token = jwe.decrypt(token, key=JWT_SECRET.encode()).decode()
+            except Exception as jwe_error:
+                # Try with previous key if rotation is enabled
+                if KEY_ROTATION_ENABLED and JWT_SECRET_PREVIOUS:
+                    try:
+                        decrypted_token = jwe.decrypt(token, key=JWT_SECRET_PREVIOUS.encode()).decode()
+                        logger.info("Token decrypted with previous key during rotation")
+                    except Exception:
+                        logger.error(f"JWE decryption failed with both keys: {jwe_error}")
+                        raise
+                else:
+                    raise
+
+        # --- Verify signature & claims with key rotation support --------------
+        verify_keys = _get_verify_keys()
+        payload = None
+        verification_errors = []
+        
+        for verify_key, key_id in verify_keys:
+            try:
+                # Enhanced JWT verification options
+                options = {
+                    "verify_exp": True,
+                    "verify_nbf": True,
+                    "verify_iat": True,
+                    "verify_signature": True,
+                    "verify_aud": False,  # Audience verification disabled by default
+                    "verify_iss": False,  # Issuer verification disabled by default
+                }
+                
+                # Add clock skew tolerance
+                if MAX_CLOCK_SKEW_SECONDS > 0:
+                    options["leeway"] = MAX_CLOCK_SKEW_SECONDS
+                
+                payload = jwt.decode(
+                    decrypted_token,
+                    verify_key,
+                    algorithms=[ALGORITHM],
+                    options=options,
+                )
+                
+                # Log successful verification with key rotation info
+                token_key_id = payload.get("kid", "unknown")
+                if key_id != JWT_SECRET_ID and KEY_ROTATION_ENABLED:
+                    logger.info(f"Token verified with previous key (kid: {token_key_id})")
+                
+                break  # Successfully verified
+                
+            except (JWTError, JWTClaimsError) as e:
+                verification_errors.append(f"Key {key_id}: {str(e)}")
+                continue
+        
+        if payload is None:
+            error_details = "; ".join(verification_errors)
+            logger.warning(f"Token verification failed with all keys: {error_details}")
+            raise JWTError("Token verification failed with all available keys")
+
+        # --- Enhanced Claims Validation ---------------------------------------
+        _validate_token_claims(payload)
+        
+        # --- Security Checks --------------------------------------------------
+        if STRICT_MODE:
+            _perform_security_checks(payload)
 
         return payload
 
     except ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired") from None
-    except (JWTError, JWTClaimsError, ValueError) as err:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from err
+        logger.warning("Token verification failed: token expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Token expired"
+        ) from None
+    except (JWTError, JWTClaimsError) as err:
+        logger.warning(f"Token verification failed: {err}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid token"
+        ) from err
     except Exception as err:
-        # Catch potential JWE decryption errors
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format") from err
+        logger.error(f"Unexpected error during token verification: {err}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid token format"
+        ) from err
+
+def _validate_token_claims(payload: Dict[str, Any]) -> None:
+    """
+    Validates that the token payload contains required claims with correct types and non-empty values.
+    
+    Raises:
+        JWTClaimsError: If 'sub' or 'role' claims are missing, not strings, or empty; or if 'jti' is present but empty.
+    """
+    # Check required claims
+    if "sub" not in payload or "role" not in payload:
+        raise JWTClaimsError("Missing required claims: 'sub' and 'role' are mandatory")
+    
+    # Validate claim values
+    if not payload["sub"] or not isinstance(payload["sub"], str):
+        raise JWTClaimsError("Invalid 'sub' claim: must be a non-empty string")
+    
+    if not payload["role"] or not isinstance(payload["role"], str):
+        raise JWTClaimsError("Invalid 'role' claim: must be a non-empty string")
+    
+    # Validate JTI if present
+    if "jti" in payload and not payload["jti"]:
+        raise JWTClaimsError("Invalid 'jti' claim: must be non-empty if present")
+
+def _perform_security_checks(payload: Dict[str, Any]) -> None:
+    """
+    Performs strict-mode security checks on a decoded JWT payload.
+    
+    Checks for tokens issued more than 24 hours ago and logs a warning if detected. If key rotation is enabled and the token was signed with the previous key, logs that the token is within the rotation grace period.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    
+    # Check for suspiciously old tokens
+    if "iat" in payload:
+        iat = datetime.datetime.fromtimestamp(payload["iat"], tz=datetime.timezone.utc)
+        token_age = now - iat
+        if token_age.total_seconds() > 86400:  # 24 hours
+            logger.warning(f"Old token detected: issued {token_age} ago")
+    
+    # Validate key rotation grace period
+    if KEY_ROTATION_ENABLED and "kid" in payload:
+        token_kid = payload["kid"]
+        if token_kid == JWT_SECRET_PREVIOUS_ID:
+            # Check if we're still within grace period
+            # Note: This is a simplified check. In production, you'd want to track rotation timestamps
+            logger.info("Token using previous key within rotation grace period")
+
+# --------------------------------------------------------------------------- #
+#                           KEY ROTATION UTILITIES                            #
+# --------------------------------------------------------------------------- #
+def get_key_rotation_status() -> Dict[str, Any]:
+    """
+    Return a summary of the current JWT/JWE key rotation configuration and status.
+    
+    Returns:
+        Dictionary with key rotation settings, including whether rotation is enabled, current and previous key IDs, grace period in hours, signing algorithm, and JWE enablement.
+    """
+    return {
+        "rotation_enabled": KEY_ROTATION_ENABLED,
+        "current_key_id": JWT_SECRET_ID,
+        "previous_key_id": JWT_SECRET_PREVIOUS_ID,
+        "grace_period_hours": KEY_ROTATION_GRACE_PERIOD_HOURS,
+        "algorithm": ALGORITHM,
+        "jwe_enabled": ENABLE_JWE,
+    }
+
+def create_token_with_rotation_metadata(
+    payload: Dict[str, Any],
+    expires_delta: Optional[datetime.timedelta] = None,
+) -> Dict[str, Any]:
+    """
+    Create a JWT or JWE access token and return it along with key rotation and configuration metadata.
+    
+    Parameters:
+        payload (Dict[str, Any]): The token payload containing required claims.
+        expires_delta (Optional[datetime.timedelta]): Optional token expiration duration.
+    
+    Returns:
+        Dict[str, Any]: A dictionary containing the access token, token type, expiration in seconds, key ID, signing algorithm, and JWE enablement status.
+    """
+    token = create_token(payload, expires_delta)
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": (expires_delta or datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).total_seconds(),
+        "key_id": JWT_SECRET_ID,
+        "algorithm": ALGORITHM,
+        "jwe_enabled": ENABLE_JWE,
+    }
