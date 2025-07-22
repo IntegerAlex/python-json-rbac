@@ -83,6 +83,6 @@ You can extend the RBAC decorator or implement your own permission logic by insp
 - **Logging**: Adjust log level with `logging.basicConfig(level=logging.INFO)` in your app entrypoint.
 
 ## More
-- See the [README](../README.md) for a quickstart.
-- See [configuration.md](configuration.md) for all config options.
+- See the [Introduction](intro.md) for a quickstart.
+- See [Configuration](configuration/index.md) for all config options.
 - API reference: docstrings in each module. 
