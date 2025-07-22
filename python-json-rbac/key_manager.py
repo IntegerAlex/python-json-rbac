@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
+import threading
 
 from .config import (
     JWT_SECRET,
@@ -18,9 +19,15 @@ from .config import (
     _generate_secure_secret,
 )
 
+# Constants
+MAGIC_UNIQUE_CHAR_RATIO = 0.5
+SECONDS_PER_DAY = 86400
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
+# Thread lock for singleton
+_key_manager_lock = threading.Lock()
 
 @dataclass
 class KeyMetadata:
@@ -132,23 +139,24 @@ class SecureKeyManager:
     
     def activate_key(self, key_id: str) -> None:
         """
-        Activate a key and deactivate others.
-        
+        Activate a key and deactivate others atomically.
         Args:
             key_id: The key ID to activate
         """
         if key_id not in self._keys:
             raise ValueError(f"Key {key_id} not found")
-        
-        # Deactivate all other keys
-        for metadata in self._keys.values():
-            metadata.is_active = False
-        
-        # Activate the specified key
-        self._keys[key_id].is_active = True
-        self._keys[key_id].last_used = datetime.datetime.now(datetime.timezone.utc)
-        
-        self._save_metadata()
+        try:
+            # Deactivate all other keys
+            for metadata in self._keys.values():
+                metadata.is_active = False
+            # Activate the specified key
+            self._keys[key_id].is_active = True
+            self._keys[key_id].last_used = datetime.datetime.now(datetime.timezone.utc)
+        finally:
+            # Ensure at least one key is active
+            if not any(m.is_active for m in self._keys.values()):
+                self._keys[key_id].is_active = True
+            self._save_metadata()
     
     def get_active_key_id(self) -> Optional[str]:
         """Get the currently active key ID."""
@@ -204,29 +212,24 @@ class SecureKeyManager:
         
         return new_secret, new_key_id
     
-    def cleanup_old_keys(self, max_age_days: int = 30) -> int:
+    def cleanup_old_keys(self, max_age_days: int = 30, dry_run: bool = False) -> Any:
         """
-        Clean up old inactive keys.
-        
+        Clean up old inactive keys, or preview which would be removed if dry_run is True.
         Args:
             max_age_days: Maximum age in days for inactive keys
-            
+            dry_run: If True, only return keys that would be removed
         Returns:
-            Number of keys removed
+            Number of keys removed, or list of keys that would be removed if dry_run
         """
         cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=max_age_days)
-        
-        keys_to_remove = []
-        for key_id, metadata in self._keys.items():
-            if not metadata.is_active and metadata.created_at < cutoff_date:
-                keys_to_remove.append(key_id)
-        
+        keys_to_remove = [key_id for key_id, metadata in self._keys.items()
+                         if not metadata.is_active and metadata.created_at < cutoff_date]
+        if dry_run:
+            return keys_to_remove
         for key_id in keys_to_remove:
             del self._keys[key_id]
-        
         if keys_to_remove:
             self._save_metadata()
-        
         return len(keys_to_remove)
     
     def get_rotation_status(self) -> Dict[str, Any]:
@@ -247,7 +250,7 @@ class SecureKeyManager:
         }
 
 
-# Global key manager instance
+# Global key manager instance (thread-safe)
 _key_manager: Optional[SecureKeyManager] = None
 
 
@@ -262,9 +265,9 @@ def get_key_manager(storage_path: Optional[str] = None) -> SecureKeyManager:
         SecureKeyManager instance
     """
     global _key_manager
-    
-    if _key_manager is None:
-        _key_manager = SecureKeyManager(storage_path)
+    with _key_manager_lock:
+        if _key_manager is None:
+            _key_manager = SecureKeyManager(storage_path)
     
     return _key_manager
 
