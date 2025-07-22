@@ -70,7 +70,7 @@ pip install python-json-rbac
 
 3. **Create a FastAPI app:**
 
-```python
+   ```python
    from python_json_rbac.auth import create_access_token, get_current_user
    from python_json_rbac.decorators import rbac_protect
    from fastapi import FastAPI, Depends
@@ -92,7 +92,7 @@ pip install python-json-rbac
   - `JWT_PRIVATE_KEY_PATH`, `JWT_PUBLIC_KEY_PATH` (for RS256)
   - `JWT_ENABLE_JWE` (optional, default: false)
   - `JWT_EXPIRE_MINUTES` (default: 30)
-  - See [docs/configuration.md](docs/configuration.md) for full details.
+  - See [documentation/docs/configuration/env-vars.md](documentation/docs/configuration/env-vars.md) for full details.
 
 ## Usage Example
 
@@ -124,28 +124,24 @@ from python_json_rbac.auth import create_access_token
 ```
 
 ## Advanced Usage & API
-
-- See the [docs/](docs/) directory for advanced RBAC, JWE, key rotation, and API reference.
-- Example: [docs/usage.md](docs/usage.md)
+- See the [documentation/docs/](documentation/docs/) directory for advanced RBAC, JWE, key rotation, and API reference.
+- Example: [documentation/docs/usage.md](documentation/docs/usage.md)
 
 ## Testing
 
 To run tests:
-
 ```bash
 pip install pytest
 pytest
 ```
 
 ## Security & Logging
-
 - All warnings and errors use Python's `logging` module for production readiness.
 - Secrets are validated for length and entropy.
 - JWE encryption and key rotation are supported.
-- See [docs/security.md](docs/security.md) for best practices.
+- See [documentation/docs/configuration/best-practices.md](documentation/docs/configuration/best-practices.md) for best practices.
 
 ## Contributing & Support
-
 - Contributions are welcome! Please open issues or submit pull requests on [GitHub](https://github.com/IntegerAlex/python-json-rbac).
 - For questions, use [GitHub Discussions](https://github.com/IntegerAlex/python-json-rbac/discussions) or [file an issue](https://github.com/IntegerAlex/python-json-rbac/issues).
 
